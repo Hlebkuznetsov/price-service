@@ -1,12 +1,10 @@
-// providers/index.js
-// Реестр всех провайдеров цен
 
 const binanceCom = require('./binanceCom');
-const binanceUS = require('./binanceUS');
+const binanceUs = require('./binanceUs');  // 👈 имя файла и регистра
 
 const providers = {
     binance_com: binanceCom,
-    binance_us: binanceUS,
+    binance_us: binanceUs,
 };
 
 module.exports = { providers };

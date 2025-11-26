@@ -1,6 +1,3 @@
-// providers/binanceUs.js
-// Провайдер цен для Binance US
-
 const BASE_URL = 'https://api.binance.us';
 
 async function getLastPrice(symbol) {
