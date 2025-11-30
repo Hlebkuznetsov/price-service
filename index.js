@@ -3,13 +3,15 @@
 // ======================================================
 
 const Fastify = require('fastify');
-const websocket = require('@fastify/websocket');
+const { WebSocketServer } = require('ws');          // 👈 ДОБАВИЛИ
 
 const { providers } = require('./providers');
 const { placeTournamentOrder } = require('./supabaseClient');
 const { subscribeClient } = require('./priceStream');
+
 const fastify = Fastify({ logger: true });
-fastify.register(websocket);
+
+
 
 
 
@@ -31,52 +33,6 @@ fastify.register(websocket);
 // Простой тестовый endpoint — проверить, что сервер жив
 fastify.get('/health', async () => {
     return { status: 'ok' };
-});
-
-// ======================================================
-// ==================  WS PRICE STREAM  =================
-// ======================================================
-
-// Клиент:
-// wss://price-service-production.up.railway.app/ws?symbol=btcusdt&interval=1m
-fastify.get('/ws', { websocket: true }, (connection, req) => {
-    // настоящий WebSocket
-    const socket = connection.socket;
-
-    try {
-        // Например: "/ws?symbol=btcusdt&interval=1m"
-        const fullUrl = req.raw.url;
-
-        const urlObj = new URL(fullUrl, 'http://localhost'); // base обязателен
-        const symbol = urlObj.searchParams.get('symbol');
-        const interval = urlObj.searchParams.get('interval');
-
-        if (!symbol || !interval) {
-            socket.send(JSON.stringify({
-                type: 'error',
-                message: 'symbol and interval query params are required',
-            }));
-            socket.close();
-            return;
-        }
-
-        console.log(
-            '[WS] New client:',
-            'symbol=',
-            symbol,
-            'interval=',
-            interval
-        );
-
-        // 👇 Передаём внутрь нашему стрим-менеджеру именно WebSocket
-        subscribeClient(socket, symbol, interval);
-
-    } catch (err) {
-        console.error('[WS] handler error:', err);
-        try {
-            socket.close();
-        } catch (_) { }
-    }
 });
 
 
@@ -176,13 +132,57 @@ fastify.post('/tournament/order', async (request, reply) => {
 
 const port = Number(process.env.PORT || 3000);
 
-fastify.listen({ port, host: '0.0.0.0' })
+fastify
+    .listen({ port, host: '0.0.0.0' })
     .then(() => {
         console.log(`Server running on port ${port}`);
+
+        // 👇 Поднимаем WebSocket сервер на том же HTTP-сервере Fastify
+        const wss = new WebSocketServer({
+            server: fastify.server,
+            path: '/ws', // тот самый путь
+        });
+
+        wss.on('connection', (ws, req) => {
+            try {
+                // req.url, например: "/ws?symbol=btcusdt&interval=1m"
+                const urlObj = new URL(req.url, 'http://localhost');
+                const symbol = urlObj.searchParams.get('symbol');
+                const interval = urlObj.searchParams.get('interval');
+
+                if (!symbol || !interval) {
+                    ws.send(
+                        JSON.stringify({
+                            type: 'error',
+                            message: 'symbol and interval query params are required',
+                        }),
+                    );
+                    ws.close();
+                    return;
+                }
+
+                console.log(
+                    '[WS] New client:',
+                    'symbol=',
+                    symbol,
+                    'interval=',
+                    interval
+                );
+
+                // 👈 Передаём САМ WebSocket из 'ws' в твой стрим-менеджер
+                subscribeClient(ws, symbol, interval);
+            } catch (err) {
+                console.error('[WS] handler error:', err);
+                try {
+                    ws.close();
+                } catch (_) { }
+            }
+        });
     })
     .catch((err) => {
         fastify.log.error(err);
         process.exit(1);
     });
+
 
 
