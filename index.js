@@ -33,28 +33,30 @@ fastify.get('/health', async () => {
     return { status: 'ok' };
 });
 
+
 // ======================================================
 // ==================  WS PRICE STREAM  =================
 // ======================================================
 
-fastify.get('/ws', { websocket: true }, (connection, req) => {
+// Клиент (Flutter / тестер):
+// wss://price-service-production.up.railway.app/ws?symbol=btcusdt&interval=1m
+fastify.get('/ws', { websocket: true }, (socket, req) => {
     try {
-        // получаем URL со всеми query
-        const fullUrl = req.raw.url; // например: "/ws?symbol=btcusdt&interval=1m"
+        // Например: "/ws?symbol=btcusdt&interval=1m"
+        const fullUrl = req.raw.url;
 
         const urlObj = new URL(fullUrl, 'http://localhost'); // base обязателен
-
         const symbol = urlObj.searchParams.get('symbol');
         const interval = urlObj.searchParams.get('interval');
 
         if (!symbol || !interval) {
-            connection.socket.send(
+            socket.send(
                 JSON.stringify({
                     type: 'error',
                     message: 'symbol and interval query params are required',
                 }),
             );
-            connection.socket.close();
+            socket.close();
             return;
         }
 
@@ -66,16 +68,17 @@ fastify.get('/ws', { websocket: true }, (connection, req) => {
             interval
         );
 
-        subscribeClient(connection.socket, symbol, interval);
+        // 👇 сюда передаём сам socket, без .socket
+        subscribeClient(socket, symbol, interval);
 
     } catch (err) {
         console.error('[WS] handler error:', err);
-
         try {
-            connection.socket.close();
+            socket.close();
         } catch (_) { }
     }
 });
+
 
 // ======================================================
 // ====================== PRICE =========================
