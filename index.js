@@ -3,12 +3,17 @@
 // ======================================================
 
 const Fastify = require('fastify');
+const websocket = require('@fastify/websocket'); // 👈 NEW
+
 const { providers } = require('./providers');
 const { placeTournamentOrder } = require('./supabaseClient');
-// ↑ Этот файл ты создашь (supabaseClient.js)
+const { subscribeClient } = require('./priceStream'); // 👈 новый импорт
 
-// Создаём сервер
+
 const fastify = Fastify({ logger: true });
+
+fastify.register(websocket);
+
 
 
 // ======================================================
@@ -19,6 +24,40 @@ const fastify = Fastify({ logger: true });
 fastify.get('/health', async () => {
     return { status: 'ok' };
 });
+
+// ======================================================
+// ==================  WS PRICE STREAM  =================
+// ======================================================
+
+// Клиент (Flutter) подключается так:
+// wss://<railway-app>/ws?symbol=btcusdt&interval=1m
+fastify.get('/ws', { websocket: true }, (connection, req) => {
+    const { symbol, interval } = req.query;
+
+    if (!symbol || !interval) {
+        connection.socket.send(
+            JSON.stringify({
+                type: 'error',
+                message: 'symbol and interval query params are required',
+            }),
+        );
+        connection.socket.close();
+        return;
+    }
+
+    console.log(
+        '[WS] New client:',
+        'symbol=',
+        symbol,
+        'interval=',
+        interval
+    );
+
+    // подвешиваем клиента к общему стриму
+    subscribeClient(connection.socket, symbol, interval);
+});
+
+
 
 
 // ======================================================
