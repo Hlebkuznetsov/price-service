@@ -33,14 +33,16 @@ fastify.get('/health', async () => {
     return { status: 'ok' };
 });
 
-
 // ======================================================
 // ==================  WS PRICE STREAM  =================
 // ======================================================
 
-// Клиент (Flutter / тестер):
+// Клиент:
 // wss://price-service-production.up.railway.app/ws?symbol=btcusdt&interval=1m
-fastify.get('/ws', { websocket: true }, (socket, req) => {
+fastify.get('/ws', { websocket: true }, (connection, req) => {
+    // настоящий WebSocket
+    const socket = connection.socket;
+
     try {
         // Например: "/ws?symbol=btcusdt&interval=1m"
         const fullUrl = req.raw.url;
@@ -50,12 +52,10 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
         const interval = urlObj.searchParams.get('interval');
 
         if (!symbol || !interval) {
-            socket.send(
-                JSON.stringify({
-                    type: 'error',
-                    message: 'symbol and interval query params are required',
-                }),
-            );
+            socket.send(JSON.stringify({
+                type: 'error',
+                message: 'symbol and interval query params are required',
+            }));
             socket.close();
             return;
         }
@@ -68,7 +68,7 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
             interval
         );
 
-        // 👇 сюда передаём сам socket, без .socket
+        // 👇 Передаём внутрь нашему стрим-менеджеру именно WebSocket
         subscribeClient(socket, symbol, interval);
 
     } catch (err) {
@@ -78,6 +78,7 @@ fastify.get('/ws', { websocket: true }, (socket, req) => {
         } catch (_) { }
     }
 });
+
 
 
 // ======================================================
