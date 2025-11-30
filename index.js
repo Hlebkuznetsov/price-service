@@ -3,16 +3,24 @@
 // ======================================================
 
 const Fastify = require('fastify');
-const websocket = require('@fastify/websocket'); // 👈 NEW
+const websocket = require('@fastify/websocket');
 
 const { providers } = require('./providers');
 const { placeTournamentOrder } = require('./supabaseClient');
-const { subscribeClient } = require('./priceStream'); // 👈 новый импорт
-
-
+const { subscribeClient } = require('./priceStream');
 const fastify = Fastify({ logger: true });
-
 fastify.register(websocket);
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -29,36 +37,45 @@ fastify.get('/health', async () => {
 // ==================  WS PRICE STREAM  =================
 // ======================================================
 
-// Клиент (Flutter) подключается так:
-// wss://<railway-app>/ws?symbol=btcusdt&interval=1m
 fastify.get('/ws', { websocket: true }, (connection, req) => {
-    const { symbol, interval } = req.query;
+    try {
+        // получаем URL со всеми query
+        const fullUrl = req.raw.url; // например: "/ws?symbol=btcusdt&interval=1m"
 
-    if (!symbol || !interval) {
-        connection.socket.send(
-            JSON.stringify({
-                type: 'error',
-                message: 'symbol and interval query params are required',
-            }),
+        const urlObj = new URL(fullUrl, 'http://localhost'); // base обязателен
+
+        const symbol = urlObj.searchParams.get('symbol');
+        const interval = urlObj.searchParams.get('interval');
+
+        if (!symbol || !interval) {
+            connection.socket.send(
+                JSON.stringify({
+                    type: 'error',
+                    message: 'symbol and interval query params are required',
+                }),
+            );
+            connection.socket.close();
+            return;
+        }
+
+        console.log(
+            '[WS] New client:',
+            'symbol=',
+            symbol,
+            'interval=',
+            interval
         );
-        connection.socket.close();
-        return;
+
+        subscribeClient(connection.socket, symbol, interval);
+
+    } catch (err) {
+        console.error('[WS] handler error:', err);
+
+        try {
+            connection.socket.close();
+        } catch (_) { }
     }
-
-    console.log(
-        '[WS] New client:',
-        'symbol=',
-        symbol,
-        'interval=',
-        interval
-    );
-
-    // подвешиваем клиента к общему стриму
-    subscribeClient(connection.socket, symbol, interval);
 });
-
-
-
 
 // ======================================================
 // ====================== PRICE =========================
@@ -163,4 +180,5 @@ fastify.listen({ port, host: '0.0.0.0' })
         fastify.log.error(err);
         process.exit(1);
     });
+
 
