@@ -3,9 +3,8 @@
 // ======================================================
 
 const Fastify = require('fastify');
-const { WebSocketServer } = require('ws');          // 👈 ДОБАВИЛИ
-
-const { providers } = require('./providers');
+const { WebSocketServer } = require('ws');
+const { getLastPrice } = require('./binance');
 const { placeTournamentOrder } = require('./supabaseClient');
 const { subscribeClient } = require('./priceStream');
 
@@ -14,23 +13,11 @@ const fastify = Fastify({ logger: true });
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 // ======================================================
 // =====================  HEALTH  =======================
 // ======================================================
-
 // Простой тестовый endpoint — проверить, что сервер жив
+
 fastify.get('/health', async () => {
     return { status: 'ok' };
 });
@@ -39,9 +26,9 @@ fastify.get('/health', async () => {
 // ======================================================
 // ============  BINANCE REST PROXY (Railway) ===========
 // ======================================================
-
 // 1) Прокси для /api/v3/klines
 //    Flutter будет вызывать: https://price-service.../api/v3/klines?symbol=BTCUSDT&interval=1m&limit=1000
+
 fastify.get('/api/v3/klines', async (req, reply) => {
     try {
         // raw.url = "/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=1000"
@@ -68,8 +55,8 @@ fastify.get('/api/v3/klines', async (req, reply) => {
 });
 
 // 2) Прокси для /api/v3/ticker/24hr
-//    Flutter будет вызывать: https://price-service.../api/v3/ticker/24hr
 //    (можно и с ?symbol=BTCUSDT — всё уйдёт в Binance)
+
 fastify.get('/api/v3/ticker/24hr', async (req, reply) => {
     try {
         const upstreamUrl = 'https://api.binance.com' + req.raw.url;
@@ -94,29 +81,19 @@ fastify.get('/api/v3/ticker/24hr', async (req, reply) => {
 });
 
 
-
 // ======================================================
 // ====================== PRICE =========================
 // ======================================================
 // Тестовый endpoint, чтобы проверить подключение провайдеров
-// Позволяет вручную запросить цену по символу и провайдеру
 
 fastify.get('/price', async (req, reply) => {
     try {
         const symbol = req.query.symbol || 'BTCUSDT';
-        const providerName = req.query.provider || 'binance_com';
-
-        const provider = providers[providerName];
-        if (!provider) {
-            return reply.status(400).send({ error: 'Unknown provider' });
-        }
-
-        const price = await provider.getLastPrice(symbol);
+        const price = await getLastPrice(symbol);
 
         return {
             symbol,
-            provider: providerName,
-            price
+            price,
         };
 
     } catch (err) {
@@ -125,35 +102,21 @@ fastify.get('/price', async (req, reply) => {
 });
 
 
+
 // ======================================================
 // ============   TOURNAMENT ORDER ENDPOINT   ===========
 // ======================================================
-// Это основной endpoint, который будет:
-//  1) принимать ордер от клиента
-//  2) брать цену у провайдера (Binance / Coinbase и т.д.)
-//  3) отправлять цену и параметры в Supabase (RPC)
-//  4) возвращать клиенту JSON с реальным ордером
 
 fastify.post('/tournament/order', async (request, reply) => {
     try {
-        // --- входящие параметры ---
-        const { entry_id, symbol, provider, side, size_usd } = request.body || {};
+        const { entry_id, symbol, side, size_usd } = request.body || {};
 
-        // --- простая валидация ---
-        if (!entry_id || !symbol || !provider || !side || !size_usd) {
+        if (!entry_id || !symbol || !side || !size_usd) {
             return reply.status(400).send({ error: 'Missing required fields' });
         }
 
-        // --- выбираем провайдера цены ---
-        const providerImpl = providers[provider];
-        if (!providerImpl) {
-            return reply.status(400).send({ error: `Unknown provider: ${provider}` });
-        }
+        const executedPrice = await getLastPrice(symbol);
 
-        // --- 1) получаем рыночную цену от провайдера ---
-        const executedPrice = await providerImpl.getLastPrice(symbol);
-
-        // --- 2) вызываем RPC функцию в Supabase ---
         const rpcResult = await placeTournamentOrder({
             entry_id,
             symbol,
@@ -162,11 +125,10 @@ fastify.post('/tournament/order', async (request, reply) => {
             executed_price: executedPrice,
         });
 
-        // --- 3) возвращаем клиенту результат ---
         return reply.send({
             status: 'filled',
             symbol,
-            provider,
+            provider: 'binance_com',   // можешь оставить как инфу или удалить
             executed_price: executedPrice,
             order: rpcResult.order,
         });
