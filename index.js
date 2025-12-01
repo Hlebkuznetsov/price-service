@@ -36,6 +36,64 @@ fastify.get('/health', async () => {
 });
 
 
+// ======================================================
+// ============  BINANCE REST PROXY (Railway) ===========
+// ======================================================
+
+// 1) Прокси для /api/v3/klines
+//    Flutter будет вызывать: https://price-service.../api/v3/klines?symbol=BTCUSDT&interval=1m&limit=1000
+fastify.get('/api/v3/klines', async (req, reply) => {
+    try {
+        // raw.url = "/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=1000"
+        const upstreamUrl = 'https://api.binance.com' + req.raw.url;
+
+        req.log.info({ upstreamUrl }, '[REST PROXY] /klines → Binance');
+
+        const res = await fetch(upstreamUrl);
+        const bodyText = await res.text();
+
+        // Прокидываем статус и тело как есть
+        reply
+            .code(res.status)
+            .header('content-type', res.headers.get('content-type') || 'application/json')
+            .send(bodyText);
+    } catch (err) {
+        req.log.error(err, '[REST PROXY ERROR] /klines');
+
+        reply.code(500).send({
+            error: 'Railway /api/v3/klines proxy error',
+            details: err.message,
+        });
+    }
+});
+
+// 2) Прокси для /api/v3/ticker/24hr
+//    Flutter будет вызывать: https://price-service.../api/v3/ticker/24hr
+//    (можно и с ?symbol=BTCUSDT — всё уйдёт в Binance)
+fastify.get('/api/v3/ticker/24hr', async (req, reply) => {
+    try {
+        const upstreamUrl = 'https://api.binance.com' + req.raw.url;
+
+        req.log.info({ upstreamUrl }, '[REST PROXY] /ticker/24hr → Binance');
+
+        const res = await fetch(upstreamUrl);
+        const bodyText = await res.text();
+
+        reply
+            .code(res.status)
+            .header('content-type', res.headers.get('content-type') || 'application/json')
+            .send(bodyText);
+    } catch (err) {
+        req.log.error(err, '[REST PROXY ERROR] /ticker/24hr');
+
+        reply.code(500).send({
+            error: 'Railway /api/v3/ticker/24hr proxy error',
+            details: err.message,
+        });
+    }
+});
+
+
 
 // ======================================================
 // ====================== PRICE =========================
