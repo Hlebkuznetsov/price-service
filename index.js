@@ -251,3 +251,46 @@ fastify.post('/last-prices', async (req, reply) => {
         });
     }
 });
+
+
+
+// ======================================================
+// ============   CLOSE TOURNAMENT POSITION   ===========
+// ======================================================
+
+fastify.post('/tournament/close-position', async (request, reply) => {
+    try {
+        const { entry_id, symbol } = request.body || {};
+
+        if (!entry_id || !symbol) {
+            return reply.status(400).send({ error: 'Missing required fields (entry_id, symbol)' });
+        }
+
+        // Берём текущую цену так же, как при открытии ордера
+        const executedPrice = await getLastPrice(symbol);
+
+        const rpcResult = await closeTournamentPosition({
+            entry_id,
+            symbol,
+            executed_price: executedPrice,
+        });
+
+        return reply.send({
+            status: 'filled',
+            symbol,
+            provider: 'binance_com',
+            executed_price: executedPrice,
+            order: rpcResult.order,
+            // при желании можно вернуть и это:
+            // position: rpcResult.position,
+            // portfolio: rpcResult.portfolio,
+        });
+    } catch (err) {
+        request.log.error(err);
+
+        return reply.status(500).send({
+            error: 'Internal error',
+            details: err.message,
+        });
+    }
+});
