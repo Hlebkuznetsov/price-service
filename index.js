@@ -5,7 +5,8 @@
 const Fastify = require('fastify');
 const { WebSocketServer } = require('ws');
 const { getLastPrice } = require('./binance');
-const { placeTournamentOrder } = require('./supabaseClient');
+
+const { placeTournamentOrder, closeTournamentPosition } = require('./supabaseClient');
 const { subscribeClient } = require('./priceStream');
 
 const fastify = Fastify({ logger: true });
