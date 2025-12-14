@@ -4,8 +4,7 @@
 
 const Fastify = require('fastify');
 const { WebSocketServer } = require('ws');
-const { getLastPrice } = require('./binance');
-
+const { getLastPrice, getLastBar1m } = require('./binance');
 const { placeTournamentOrder, closeTournamentPosition } = require('./supabaseClient');
 const { subscribeClient } = require('./priceStream');
 
@@ -214,6 +213,7 @@ fastify
 // Для Supabase: принимает { symbols: ["BTCUSDT", "ETHUSDT", ...] }
 // и возвращает { prices: { BTCUSDT: 12345.67, ETHUSDT: 2345.89, ... } }
 
+
 fastify.post('/last-prices', async (req, reply) => {
     try {
         const body = req.body || {};
@@ -225,19 +225,17 @@ fastify.post('/last-prices', async (req, reply) => {
             });
         }
 
-        // уберём дубли и приведём к строкам
         const uniqueSymbols = [...new Set(symbols.map((s) => String(s).trim().toUpperCase()))];
 
         const prices = {};
-        // можно сделать параллельно через Promise.all
+
         await Promise.all(
             uniqueSymbols.map(async (sym) => {
                 try {
-                    const p = await getLastPrice(sym);
-                    prices[sym] = p;
+                    const bar = await getLastBar1m(sym);
+                    prices[sym] = bar; // {last, high, low}
                 } catch (e) {
-                    // если по какому-то символу ошибка — просто пишем null
-                    req.log.error(e, `[LAST-PRICES] Failed to fetch price for ${sym}`);
+                    req.log.error(e, `[LAST-PRICES] Failed to fetch 1m bar for ${sym}`);
                     prices[sym] = null;
                 }
             }),
