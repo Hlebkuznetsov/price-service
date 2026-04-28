@@ -134,20 +134,32 @@ fastify.post('/tournament/order', async (request, reply) => {
         const [tournament] = await tournRes.json();
         const leverage = Number(tournament?.leverage ?? 50);
 
-        // 4. Считаем текущую открытую экспозицию
+        // 4. Считаем экспозицию по направлениям
         const posRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/tournament_positions?entry_id=eq.${entry_id}&select=size_usd`,
+            `${SUPABASE_URL}/rest/v1/tournament_positions?entry_id=eq.${entry_id}&select=size_usd,side`,
             { headers: supabaseHeaders }
         );
         const positions = await posRes.json();
-        const currentExposure = (positions ?? [])
-            .reduce((sum, p) => sum + Math.abs(Number(p.size_usd) || 0), 0);
 
-        // 5. Проверяем лимит
-        //    Максимальная экспозиция = cash * leverage
-        //    * 2 — разрешаем разворот позиции (закрыть лонг + открыть шорт)
-        const maxExposure = cash * leverage;
-        const allowedOrderSize = currentExposure + maxExposure;
+        const orderIsLong = side === 'buy'; // buy = long, sell = short
+
+        let sameDirectionExposure = 0;
+        let oppositeDirectionExposure = 0;
+
+        for (const p of positions ?? []) {
+            const posSize = Math.abs(Number(p.size_usd) || 0);
+            const posIsLong = p.side === 'long';
+            if (posIsLong === orderIsLong) {
+                sameDirectionExposure += posSize;
+            } else {
+                oppositeDirectionExposure += posSize;
+            }
+        }
+
+        // 5. Проверяем лимит с учётом направления
+        // В том же направлении: можно добавить до (maxExposure - sameDirectionExposure)
+        // В обратном направлении: можно закрыть opposite + открыть до maxExposure
+        const allowedOrderSize = oppositeDirectionExposure + (maxExposure - sameDirectionExposure);
 
         if (size_usd > allowedOrderSize + 0.01) {
             request.log.warn(
