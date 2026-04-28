@@ -156,10 +156,12 @@ fastify.post('/tournament/order', async (request, reply) => {
             }
         }
 
-        // 5. Проверяем лимит с учётом направления
-        // В том же направлении: можно добавить до (maxExposure - sameDirectionExposure)
-        // В обратном направлении: можно закрыть opposite + открыть до maxExposure
+        // 5. Проверяем лимит
+        //    Максимальная экспозиция = cash * leverage
+        //    * 2 — разрешаем разворот позиции (закрыть лонг + открыть шорт)
+        const maxExposure = cash * leverage;
         const allowedOrderSize = oppositeDirectionExposure + (maxExposure - sameDirectionExposure);
+
 
         if (size_usd > allowedOrderSize + 0.01) {
             request.log.warn(
