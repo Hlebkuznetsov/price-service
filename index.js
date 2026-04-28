@@ -147,7 +147,7 @@ fastify.post('/tournament/order', async (request, reply) => {
         //    Максимальная экспозиция = cash * leverage
         //    * 2 — разрешаем разворот позиции (закрыть лонг + открыть шорт)
         const maxExposure = cash * leverage;
-        const allowedOrderSize = Math.max(0, (maxExposure - currentExposure) * 2);
+        const allowedOrderSize = currentExposure + maxExposure;
 
         if (size_usd > allowedOrderSize + 0.01) {
             request.log.warn(
