@@ -1,26 +1,21 @@
 const BASE_URL = 'https://api.binance.com';
 
 async function getLastPrice(symbol) {
-    const [priceRes, statsRes] = await Promise.all([
-        fetch(`${BASE_URL}/api/v3/ticker/price?symbol=${encodeURIComponent(symbol)}`),
-        fetch(`${BASE_URL}/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`),
-    ]);
+    const res = await fetch(
+        `${BASE_URL}/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`
+    );
 
-    if (!priceRes.ok) {
-        throw new Error(`Binance price error: ${priceRes.status} ${priceRes.statusText}`);
-    }
-    if (!statsRes.ok) {
-        throw new Error(`Binance 24hr error: ${statsRes.status} ${statsRes.statusText}`);
+    if (!res.ok) {
+        throw new Error(`Binance 24hr error: ${res.status} ${res.statusText}`);
     }
 
-    const priceData = await priceRes.json();
-    const statsData = await statsRes.json();
+    const data = await res.json();
 
-    const price = Number(priceData.price);
-    const high24 = Number(statsData.highPrice);
-    const low24 = Number(statsData.lowPrice);
+    const price = Number(data.lastPrice);
+    const high24 = Number(data.highPrice);
+    const low24 = Number(data.lowPrice);
 
-    if (!Number.isFinite(price)) {
+    if (!Number.isFinite(price) || price <= 0) {
         throw new Error(`Invalid price from Binance for ${symbol}`);
     }
 
@@ -38,8 +33,7 @@ async function getLastPrice(symbol) {
 // для SL / liquidation
 async function getLastBar1m(symbol) {
     const sym = String(symbol).trim().toUpperCase();
-    const url =
-        `${BASE_URL}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=1`;
+    const url = `${BASE_URL}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=1`;
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -64,7 +58,4 @@ async function getLastBar1m(symbol) {
     return { last, high, low };
 }
 
-module.exports = {
-    getLastPrice,
-    getLastBar1m,
-};
+module.exports = { getLastPrice, getLastBar1m };
