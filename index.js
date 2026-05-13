@@ -10,7 +10,6 @@ const { subscribeClient } = require('./priceStream');
 
 const fastify = Fastify({ logger: true });
 
-// Supabase credentials для server-side валидации
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
@@ -19,6 +18,38 @@ const supabaseHeaders = {
     'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
     'Content-Type': 'application/json',
 };
+
+
+// ======================================================
+// ================  PRICE VALIDATION  ==================
+// ======================================================
+
+const MAX_PRICE_DEVIATION = 0.12; // 12%
+
+async function validateExecutedPrice(symbol, fetchedPrice) {
+    try {
+        const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/strategy_orders?strategy=eq.${encodeURIComponent(symbol)}&order=created_at.desc&limit=10&select=price`,
+            { headers: supabaseHeaders }
+        );
+        const rows = await res.json();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+
+        const avg = rows.reduce((s, r) => s + Number(r.price), 0) / rows.length;
+        const deviation = Math.abs(fetchedPrice - avg) / avg;
+
+        if (deviation > MAX_PRICE_DEVIATION) {
+            throw new Error(
+                `Price anomaly detected: ${symbol} fetched=${fetchedPrice} recentAvg=${avg.toFixed(2)} deviation=${(deviation * 100).toFixed(1)}%`
+            );
+        }
+    } catch (err) {
+        // перебрасываем только если это наша ошибка аномалии
+        if (err.message.startsWith('Price anomaly')) throw err;
+        // если запрос к Supabase упал — логируем но не блокируем ордер
+        fastify.log.warn(`[PRICE VALIDATION] Failed to validate price for ${symbol}: ${err.message}`);
+    }
+}
 
 
 // ======================================================
@@ -98,9 +129,8 @@ fastify.post('/tournament/order', async (request, reply) => {
             return reply.status(400).send({ error: 'Invalid size_usd' });
         }
 
-        // ── SERVER-SIDE LEVERAGE VALIDATION ──────────────────────────
+        // —— SERVER-SIDE LEVERAGE VALIDATION ————————————————————————
 
-        // 1. Проверяем что запись активна
         const entryRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournament_entries?id=eq.${entry_id}&select=status,tournament_id`,
             { headers: supabaseHeaders }
@@ -114,7 +144,6 @@ fastify.post('/tournament/order', async (request, reply) => {
             return reply.status(400).send({ error: `Entry is ${entry.status}, cannot trade` });
         }
 
-        // 2. Получаем cash из портфеля
         const portRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournament_portfolio?entry_id=eq.${entry_id}&select=cash`,
             { headers: supabaseHeaders }
@@ -126,7 +155,6 @@ fastify.post('/tournament/order', async (request, reply) => {
         }
         const cash = Number(portfolio.cash);
 
-        // 3. Получаем leverage из турнира
         const tournRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournaments?id=eq.${entry.tournament_id}&select=leverage`,
             { headers: supabaseHeaders }
@@ -134,14 +162,13 @@ fastify.post('/tournament/order', async (request, reply) => {
         const [tournament] = await tournRes.json();
         const leverage = Number(tournament?.leverage ?? 50);
 
-        // 4. Считаем экспозицию по направлениям
         const posRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournament_positions?entry_id=eq.${entry_id}&select=size_usd,side`,
             { headers: supabaseHeaders }
         );
         const positions = await posRes.json();
 
-        const orderIsLong = side === 'buy'; // buy = long, sell = short
+        const orderIsLong = side === 'buy';
 
         let sameDirectionExposure = 0;
         let oppositeDirectionExposure = 0;
@@ -156,12 +183,8 @@ fastify.post('/tournament/order', async (request, reply) => {
             }
         }
 
-        // 5. Проверяем лимит
-        //    Максимальная экспозиция = cash * leverage
-        //    * 2 — разрешаем разворот позиции (закрыть лонг + открыть шорт)
         const maxExposure = cash * leverage;
         const allowedOrderSize = oppositeDirectionExposure + (maxExposure - sameDirectionExposure);
-
 
         if (size_usd > allowedOrderSize + 0.01) {
             request.log.warn(
@@ -172,9 +195,10 @@ fastify.post('/tournament/order', async (request, reply) => {
             });
         }
 
-        // ── EXECUTE ORDER ─────────────────────────────────────────────
+        // —— EXECUTE ORDER ————————————————————————————————————————————
 
         const executedPrice = await getLastPrice(symbol);
+        await validateExecutedPrice(symbol, executedPrice); // 🛡️ проверка аномалии
 
         const rpcResult = await placeTournamentOrder({
             entry_id,
@@ -290,6 +314,7 @@ fastify.post('/tournament/close-position', async (request, reply) => {
         }
 
         const executedPrice = await getLastPrice(symbol);
+        await validateExecutedPrice(symbol, executedPrice); // 🛡️ проверка аномалии
 
         const rpcResult = await closeTournamentPosition({
             entry_id,
