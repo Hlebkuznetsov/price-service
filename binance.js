@@ -33,7 +33,7 @@ async function getLastPrice(symbol) {
 // для SL / liquidation
 async function getLastBar1m(symbol) {
     const sym = String(symbol).trim().toUpperCase();
-    const url = `${BASE_URL}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=1`;
+    const url = `${BASE_URL}/api/v3/klines?symbol=${encodeURIComponent(sym)}&interval=1m&limit=2`;
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -42,14 +42,16 @@ async function getLastBar1m(symbol) {
     }
 
     const arr = await res.json();
-    if (!Array.isArray(arr) || arr.length === 0) {
-        throw new Error(`Empty kline for ${sym}`);
+    if (!Array.isArray(arr) || arr.length < 2) {
+        throw new Error(`Not enough klines for ${sym}`);
     }
 
-    const k = arr[0];
-    const high = Number(k[2]);
-    const low = Number(k[3]);
-    const last = Number(k[4]);
+    const prev = arr[0]; // завершённая свеча — полный high/low за прошлую минуту
+    const curr = arr[1]; // текущая открытая — движение прямо сейчас
+
+    const high = Math.max(Number(prev[2]), Number(curr[2]));
+    const low = Math.min(Number(prev[3]), Number(curr[3]));
+    const last = Number(curr[4]);
 
     if (![high, low, last].every(Number.isFinite)) {
         throw new Error(`Invalid kline numbers for ${sym}`);
@@ -57,5 +59,6 @@ async function getLastBar1m(symbol) {
 
     return { last, high, low };
 }
+
 
 module.exports = { getLastPrice, getLastBar1m };
