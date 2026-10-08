@@ -176,6 +176,17 @@ fastify.post('/tournament/order', async (request, reply) => {
 
         const executedPrice = await getLastPrice(symbol);
 
+        await fetch(`${SUPABASE_URL}/rest/v1/instrument_prices`, {
+            method: 'POST',
+            headers: { ...supabaseHeaders, 'Prefer': 'resolution=merge-duplicates' },
+            body: JSON.stringify({
+                symbol: symbol.toUpperCase(),
+                last_price: executedPrice,
+                updated_at: new Date().toISOString(),
+            }),
+        });
+
+
         const rpcResult = await placeTournamentOrder({
             entry_id,
             symbol,
@@ -291,7 +302,18 @@ fastify.post('/tournament/close-position', async (request, reply) => {
 
         const executedPrice = await getLastPrice(symbol);
 
+        await fetch(`${SUPABASE_URL}/rest/v1/instrument_prices`, {
+            method: 'POST',
+            headers: { ...supabaseHeaders, 'Prefer': 'resolution=merge-duplicates' },
+            body: JSON.stringify({
+                symbol: symbol.toUpperCase(),
+                last_price: executedPrice,
+                updated_at: new Date().toISOString(),
+            }),
+        });
+
         const rpcResult = await closeTournamentPosition({
+
             entry_id,
             symbol,
             executed_price: executedPrice,
