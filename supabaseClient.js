@@ -28,7 +28,6 @@ async function placeTournamentOrder(params) {
             p_symbol: params.symbol,
             p_side: params.side,
             p_size_usd: params.size_usd,
-            p_executed_price: params.executed_price,
         }),
     });
 
@@ -57,7 +56,6 @@ async function closeTournamentPosition(params) {
         body: JSON.stringify({
             p_entry_id: params.entry_id,
             p_symbol: params.symbol,
-            p_executed_price: params.executed_price,
         }),
     });
 
