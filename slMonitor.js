@@ -37,7 +37,7 @@ async function fetchPositions() {
 
         const posRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournament_positions` +
-            `?select=id,entry_id,symbol,side,sl_price,tp_price` +
+            `?select=id,entry_id,symbol,side,sl_price,tp_price,tournament_entries!inner(user_id)` +
             `&entry_id=in.(${entryIds})` +
             `&or=(sl_price.not.is.null,tp_price.not.is.null)`,
             { headers }
@@ -51,7 +51,10 @@ async function fetchPositions() {
         const bySymbol = {};
         for (const pos of positions) {
             const sym = pos.symbol.toUpperCase();
-            (bySymbol[sym] = bySymbol[sym] || []).push(pos);
+            (bySymbol[sym] = bySymbol[sym] || []).push({
+                ...pos,
+                user_id: pos.tournament_entries?.user_id,
+            });
         }
 
         positionsBySymbol = bySymbol;
@@ -62,7 +65,7 @@ async function fetchPositions() {
     }
 }
 
-async function closePosition(entryId, symbol, price, reason) {
+async function closePosition(entryId, symbol, price, reason, userId, side) {
     const key = `${entryId}:${symbol}`;
     if (closing.has(key)) return;
     closing.add(key);
@@ -101,6 +104,19 @@ async function closePosition(entryId, symbol, price, reason) {
             positionsBySymbol[symbol] = positionsBySymbol[symbol].filter((p) => p.entry_id !== entryId);
             if (!positionsBySymbol[symbol].length) delete positionsBySymbol[symbol];
         }
+
+        if (userId) {
+            const isSL = reason.startsWith('SL');
+            const slug = isSL ? 'send-sl-notification' : 'send-tp-notification';
+            const notifBody = isSL
+                ? { user_id: userId, symbol, side, sl_price: price }
+                : { user_id: userId, symbol, side, tp_price: price };
+            fetch(`${SUPABASE_URL}/functions/v1/${slug}`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(notifBody),
+            }).catch((e) => console.error('[SL] Notification error:', e.message));
+        }
     } catch (err) {
         console.error('[SL] closePosition error:', err);
         closing.delete(key);
@@ -119,15 +135,16 @@ function checkPrice(symbol, price) {
 
         if (pos.side === 'long') {
             if (sl !== null && price <= sl)
-                closePosition(pos.entry_id, symbol, price, `SL long price=${price} sl=${sl}`);
+                closePosition(pos.entry_id, symbol, sl, `SL long price=${price} sl=${sl}`, pos.user_id, pos.side);
             else if (tp !== null && price >= tp)
-                closePosition(pos.entry_id, symbol, price, `TP long price=${price} tp=${tp}`);
+                closePosition(pos.entry_id, symbol, tp, `TP long price=${price} tp=${tp}`, pos.user_id, pos.side);
         } else if (pos.side === 'short') {
             if (sl !== null && price >= sl)
-                closePosition(pos.entry_id, symbol, price, `SL short price=${price} sl=${sl}`);
+                closePosition(pos.entry_id, symbol, sl, `SL short price=${price} sl=${sl}`, pos.user_id, pos.side);
             else if (tp !== null && price <= tp)
-                closePosition(pos.entry_id, symbol, price, `TP short price=${price} tp=${tp}`);
+                closePosition(pos.entry_id, symbol, tp, `TP short price=${price} tp=${tp}`, pos.user_id, pos.side);
         }
+
     }
 }
 
