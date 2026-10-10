@@ -10,6 +10,7 @@ const { subscribeClient } = require('./priceStream');
 const { start: startSlMonitor } = require('./slMonitor');
 
 
+
 const fastify = Fastify({ logger: true });
 
 // Supabase credentials для server-side валидации
@@ -30,6 +31,10 @@ const supabaseHeaders = {
 fastify.get('/health', async () => {
     return { status: 'ok' };
 });
+
+
+fastify.get('/sl-status', async () => slStatus());
+
 
 
 // ======================================================

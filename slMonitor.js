@@ -192,4 +192,17 @@ function start() {
     setInterval(fetchPositions, REFRESH_INTERVAL_MS);
 }
 
+function getStatus() {
+    return {
+        wsState: ws ? ws.readyState : -1, // 0=CONNECTING 1=OPEN 2=CLOSING 3=CLOSED -1=null
+        symbolsWatched: Object.keys(positionsBySymbol),
+        positionCount: Object.values(positionsBySymbol).flat().length,
+        positions: positionsBySymbol,
+        closing: [...closing],
+    };
+}
+
+module.exports = { start, getStatus };
+
+
 module.exports = { start };
