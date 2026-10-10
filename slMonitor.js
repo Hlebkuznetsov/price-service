@@ -204,5 +204,3 @@ function getStatus() {
 
 module.exports = { start, getStatus };
 
-
-module.exports = { start };
