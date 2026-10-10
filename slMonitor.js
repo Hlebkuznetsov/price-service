@@ -3,7 +3,7 @@ const WebSocket = require('ws');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const REFRESH_INTERVAL_MS = 30_000;
+const REFRESH_INTERVAL_MS = 5_000;
 
 const headers = {
     apikey: SUPABASE_SERVICE_KEY,
