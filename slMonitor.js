@@ -95,6 +95,7 @@ async function closePosition(entryId, symbol, price, reason) {
         }
 
         console.log(`[SL] Closed ${symbol} entry=${entryId} (${reason})`);
+        closing.delete(key);
 
         if (positionsBySymbol[symbol]) {
             positionsBySymbol[symbol] = positionsBySymbol[symbol].filter((p) => p.entry_id !== entryId);
