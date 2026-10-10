@@ -7,7 +7,7 @@ const { WebSocketServer } = require('ws');
 const { getLastPrice, getLastBar1m } = require('./binance');
 const { placeTournamentOrder, closeTournamentPosition } = require('./supabaseClient');
 const { subscribeClient } = require('./priceStream');
-const { start: startSlMonitor } = require('./slMonitor');
+const { start: startSlMonitor, getStatus: slStatus } = require('./slMonitor');
 
 
 
