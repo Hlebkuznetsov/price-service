@@ -135,14 +135,14 @@ function checkPrice(symbol, price) {
 
         if (pos.side === 'long') {
             if (sl !== null && price <= sl)
-                closePosition(pos.entry_id, symbol, sl, `SL long price=${price} sl=${sl}`, pos.user_id, pos.side);
+                closePosition(pos.entry_id, symbol, price, `SL long price=${price} sl=${sl}`, pos.user_id, pos.side);
             else if (tp !== null && price >= tp)
-                closePosition(pos.entry_id, symbol, tp, `TP long price=${price} tp=${tp}`, pos.user_id, pos.side);
+                closePosition(pos.entry_id, symbol, price, `TP long price=${price} tp=${tp}`, pos.user_id, pos.side);
         } else if (pos.side === 'short') {
             if (sl !== null && price >= sl)
-                closePosition(pos.entry_id, symbol, sl, `SL short price=${price} sl=${sl}`, pos.user_id, pos.side);
+                closePosition(pos.entry_id, symbol, price, `SL short price=${price} sl=${sl}`, pos.user_id, pos.side);
             else if (tp !== null && price <= tp)
-                closePosition(pos.entry_id, symbol, tp, `TP short price=${price} tp=${tp}`, pos.user_id, pos.side);
+                closePosition(pos.entry_id, symbol, price, `TP short price=${price} tp=${tp}`, pos.user_id, pos.side);
         }
 
     }
