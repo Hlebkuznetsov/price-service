@@ -37,7 +37,7 @@ async function fetchPositions() {
 
         const posRes = await fetch(
             `${SUPABASE_URL}/rest/v1/tournament_positions` +
-            `?select=id,entry_id,symbol,side,sl_price,tp_price,tournament_entries!inner(user_id)` +
+            `?select=id,entry_id,symbol,side,sl_price,tp_price,seen_low,seen_high,tournament_entries!inner(user_id)` +
             `&entry_id=in.(${entryIds})` +
             `&or=(sl_price.not.is.null,tp_price.not.is.null)`,
             { headers }
@@ -51,9 +51,13 @@ async function fetchPositions() {
         const bySymbol = {};
         for (const pos of positions) {
             const sym = pos.symbol.toUpperCase();
+            // preserve in-memory seen values if position already tracked
+            const existing = positionsBySymbol[sym]?.find((p) => p.id === pos.id);
             (bySymbol[sym] = bySymbol[sym] || []).push({
                 ...pos,
                 user_id: pos.tournament_entries?.user_id,
+                seen_low: existing ? existing.seen_low : (pos.seen_low != null ? Number(pos.seen_low) : null),
+                seen_high: existing ? existing.seen_high : (pos.seen_high != null ? Number(pos.seen_high) : null),
             });
         }
 
@@ -133,15 +137,19 @@ function checkPrice(symbol, price) {
         const sl = pos.sl_price != null ? Number(pos.sl_price) : null;
         const tp = pos.tp_price != null ? Number(pos.tp_price) : null;
 
+        // update in-memory seen extremes
+        pos.seen_low  = pos.seen_low  != null ? Math.min(pos.seen_low,  price) : price;
+        pos.seen_high = pos.seen_high != null ? Math.max(pos.seen_high, price) : price;
+
         if (pos.side === 'long') {
-            if (sl !== null && price <= sl)
+            if (sl !== null && price <= sl && pos.seen_low <= sl)
                 closePosition(pos.entry_id, symbol, price, `SL long price=${price} sl=${sl}`, pos.user_id, pos.side);
-            else if (tp !== null && price >= tp)
+            else if (tp !== null && price >= tp && pos.seen_high >= tp)
                 closePosition(pos.entry_id, symbol, price, `TP long price=${price} tp=${tp}`, pos.user_id, pos.side);
         } else if (pos.side === 'short') {
-            if (sl !== null && price >= sl)
+            if (sl !== null && price >= sl && pos.seen_high >= sl)
                 closePosition(pos.entry_id, symbol, price, `SL short price=${price} sl=${sl}`, pos.user_id, pos.side);
-            else if (tp !== null && price <= tp)
+            else if (tp !== null && price <= tp && pos.seen_low <= tp)
                 closePosition(pos.entry_id, symbol, price, `TP short price=${price} tp=${tp}`, pos.user_id, pos.side);
         }
 
