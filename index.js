@@ -28,6 +28,59 @@ const supabaseHeaders = {
 
 
 // ======================================================
+// ==================  AUTH (entry owner)  ==============
+// ======================================================
+
+// Пока старые версии приложения не обновились — запросы без токена
+// пропускаются с warn в логе. После релиза: REQUIRE_AUTH=true в Railway.
+const REQUIRE_AUTH = process.env.REQUIRE_AUTH === 'true';
+
+// Проверяет, что запрос пришёл от владельца entry.
+// Возвращает entry ({ status, tournament_id, user_id }) или null, если ответ уже отправлен.
+async function authorizeEntry(request, reply, entry_id) {
+    const entryRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/tournament_entries?id=eq.${encodeURIComponent(entry_id)}&select=status,tournament_id,user_id`,
+        { headers: supabaseHeaders }
+    );
+    const [entry] = await entryRes.json();
+
+    if (!entry) {
+        reply.status(400).send({ error: 'Entry not found' });
+        return null;
+    }
+
+    const authHeader = request.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+    if (!token) {
+        if (REQUIRE_AUTH) {
+            reply.status(401).send({ error: 'Unauthorized' });
+            return null;
+        }
+        request.log.warn(`[AUTH] no token entry=${entry_id} (legacy client)`);
+        return entry;
+    }
+
+    const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { apikey: SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` },
+    });
+    if (!userRes.ok) {
+        reply.status(401).send({ error: 'Invalid or expired session' });
+        return null;
+    }
+    const user = await userRes.json();
+
+    if (user?.id !== entry.user_id) {
+        request.log.warn(`[AUTH BLOCKED] user=${user?.id} tried entry=${entry_id} owner=${entry.user_id}`);
+        reply.status(403).send({ error: 'Forbidden' });
+        return null;
+    }
+
+    return entry;
+}
+
+
+// ======================================================
 // =====================  HEALTH  =======================
 // ======================================================
 
@@ -110,16 +163,10 @@ fastify.post('/tournament/order', async (request, reply) => {
 
         // ── SERVER-SIDE LEVERAGE VALIDATION ──────────────────────────
 
-        // 1. Проверяем что запись активна
-        const entryRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/tournament_entries?id=eq.${entry_id}&select=status,tournament_id`,
-            { headers: supabaseHeaders }
-        );
-        const [entry] = await entryRes.json();
+        // 1. Проверяем владельца и что запись активна
+        const entry = await authorizeEntry(request, reply, entry_id);
+        if (!entry) return reply;
 
-        if (!entry) {
-            return reply.status(400).send({ error: 'Entry not found' });
-        }
         if (entry.status !== 'active') {
             return reply.status(400).send({ error: `Entry is ${entry.status}, cannot trade` });
         }
@@ -323,6 +370,9 @@ fastify.post('/tournament/close-position', async (request, reply) => {
         if (!entry_id || !symbol) {
             return reply.status(400).send({ error: 'Missing required fields (entry_id, symbol)' });
         }
+
+        const entry = await authorizeEntry(request, reply, entry_id);
+        if (!entry) return reply;
 
         const executedPrice = await getLastPrice(symbol);
 
