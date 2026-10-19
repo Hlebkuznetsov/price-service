@@ -17,6 +17,9 @@ const fastify = Fastify({ logger: true });
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
+// Монеты дешевле этого порога запрещены в турнирах
+const MIN_TOURNAMENT_PRICE = 0.0001;
+
 const supabaseHeaders = {
     'apikey': SUPABASE_SERVICE_KEY,
     'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
@@ -135,11 +138,18 @@ fastify.post('/tournament/order', async (request, reply) => {
 
         // 3. Получаем leverage из турнира
         const tournRes = await fetch(
-            `${SUPABASE_URL}/rest/v1/tournaments?id=eq.${entry.tournament_id}&select=leverage`,
+            `${SUPABASE_URL}/rest/v1/tournaments?id=eq.${entry.tournament_id}&select=leverage,symbol_blacklist`,
             { headers: supabaseHeaders }
         );
         const [tournament] = await tournRes.json();
         const leverage = Number(tournament?.leverage ?? 50);
+
+        // 3.1 Запрещённые монеты турнира
+        const blacklist = (tournament?.symbol_blacklist ?? []).map((s) => String(s).toUpperCase());
+        if (blacklist.includes(String(symbol).toUpperCase())) {
+            request.log.warn(`[ORDER BLOCKED] entry=${entry_id} symbol=${symbol} reason=blacklist`);
+            return reply.status(400).send({ error: `Symbol ${symbol} is not allowed in this tournament` });
+        }
 
         // 4. Считаем экспозицию по направлениям
         const posRes = await fetch(
@@ -182,6 +192,13 @@ fastify.post('/tournament/order', async (request, reply) => {
         // ── EXECUTE ORDER ─────────────────────────────────────────────
 
         const executedPrice = await getLastPrice(symbol);
+
+        // Микро-цены (BTTC, PEPE, SHIB…): тик Binance 1e-8 — это проценты от цены,
+        // с турнирным плечом это гарантированный профит
+        if (executedPrice < MIN_TOURNAMENT_PRICE) {
+            request.log.warn(`[ORDER BLOCKED] entry=${entry_id} symbol=${symbol} price=${executedPrice} reason=min_price`);
+            return reply.status(400).send({ error: `Symbol ${symbol} is not allowed in tournaments (price too low)` });
+        }
 
         await fetch(`${SUPABASE_URL}/rest/v1/instrument_prices`, {
             method: 'POST',
